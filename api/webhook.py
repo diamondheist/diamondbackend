@@ -1,10 +1,9 @@
 import os
 import json
 import asyncio
+import logging
 import requests
 import datetime
-import logging
-from http.server import BaseHTTPRequestHandler
 from telebot.async_telebot import AsyncTeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, Update
 import firebase_admin
@@ -14,31 +13,26 @@ from firebase_admin import credentials, firestore, storage
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Fetch Telegram Bot Token
+# Fetch Telegram Bot Token and Firebase Configuration
 try:
     API_TOKEN = os.environ.get("BOT_TOKEN")
-    if not API_TOKEN:
-        raise ValueError("Bot token not found in environment variables")
+    FIREBASE_CONFIG = os.environ.get("FIREBASE_SERVICE_ACCOUNT")
+    
+    if not API_TOKEN or not FIREBASE_CONFIG:
+        raise ValueError("Missing required environment variables")
     
     bot = AsyncTeleBot(API_TOKEN)
-except Exception as e:
-    logger.error(f"Failed to initialize Telegram bot: {e}")
-    raise
-
-# Initialize Firebase Admin
-try:
-    firebase_config = os.environ.get("FIREBASE_SERVICE_ACCOUNT")
-    if not firebase_config:
-        raise ValueError("Firebase configuration not found")
     
-    firebase_config_dict = json.loads(firebase_config)
+    # Initialize Firebase Admin
+    firebase_config_dict = json.loads(FIREBASE_CONFIG)
     cred = credentials.Certificate(firebase_config_dict)
     firebase_admin.initialize_app(cred, {'storageBucket': 'diamondapp-f0ff9.appspot.com'})
     
     db = firestore.client()
     bucket = storage.bucket()
+
 except Exception as e:
-    logger.error(f"Failed to initialize Firebase: {e}")
+    logger.error(f"Initialization error: {e}")
     raise
 
 def generate_start_keyboard():
@@ -141,33 +135,13 @@ async def start(message):
         error_message = "An error occurred. Please try again later."
         await bot.reply_to(message, error_message)
 
-class WebhookHandler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            update_dict = json.loads(post_data.decode('utf-8'))
-
-            asyncio.run(self.process_update(update_dict))
-
-            self.send_response(200)
-            self.end_headers()
-        except Exception as e:
-            logger.error(f"Webhook POST error: {e}")
-            self.send_response(500)
-            self.end_headers()
-
-    async def process_update(self, update_dict):
-        try:
-            update = Update.de_json(update_dict)
-            await bot.process_new_update([update])
-        except Exception as e:
-            logger.error(f"Update processing error: {e}")
-
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write("Bot is running".encode())
+# Replace HTTP server with more robust webhook handling
+async def process_webhook_update(update_dict):
+    try:
+        update = Update.de_json(update_dict)
+        await bot.process_new_update([update])
+    except Exception as e:
+        logger.error(f"Webhook update processing error: {e}")
 
 def main():
     logger.info("Telegram Bot is starting...")
