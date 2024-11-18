@@ -124,9 +124,18 @@ async def process_webhook_update(update_dict):
     except Exception as e:
         logger.error(f"Webhook update processing error: {e}")
 
+def set_webhook():
+    webhook_url = os.environ.get('WEBHOOK_URL')  # This should be the full URL of your webhook handler (e.g., https://yourdomain.vercel.app/api/webhook)
+    if webhook_url:
+        bot.remove_webhook()
+        bot.set_webhook(url=webhook_url)
+        logger.info(f"Webhook set to: {webhook_url}")
+    else:
+        logger.error("Webhook URL not provided")
+
 def main():
     logger.info("Telegram Bot is starting...")
+    set_webhook()
 
 if __name__ == "__main__":
     main()
-
