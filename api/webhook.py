@@ -1,22 +1,16 @@
 import os
 import json
 import logging
-import requests
-import datetime
-from flask import Flask, request, jsonify
 from telebot.async_telebot import AsyncTeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, Update
 import firebase_admin
-from firebase_admin import credentials, firestore, storage
+from firebase_admin import credentials, firestore
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Initialize Flask app
-app = Flask(__name__)
-
-# Fetch Telegram Bot Token and Firebase Configuration from environment variables
+# Fetch Telegram Bot Token and Firebase Configuration
 try:
     API_TOKEN = os.environ.get("BOT_TOKEN")
     FIREBASE_CONFIG = os.environ.get("FIREBASE_SERVICE_ACCOUNT")
@@ -26,25 +20,22 @@ try:
     
     bot = AsyncTeleBot(API_TOKEN)
     
-    # Initialize Firebase Admin
+    # Initialize Firebase Admin (Firestore only, no Firebase Storage)
     firebase_config_dict = json.loads(FIREBASE_CONFIG)
     cred = credentials.Certificate(firebase_config_dict)
-    firebase_admin.initialize_app(cred, {'storageBucket': 'diamondapp-f0ff9.appspot.com'})
+    firebase_admin.initialize_app(cred)
     
     db = firestore.client()
-    bucket = storage.bucket()
 
 except Exception as e:
     logger.error(f"Initialization error: {e}")
     raise
 
-# Function to generate the start keyboard with a link
 def generate_start_keyboard():
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton("Open Diamondapp", web_app=WebAppInfo(url="https://diamondheist.netlify.app/")))
     return keyboard
 
-# Handler for the /start command
 @bot.message_handler(commands=['start'])
 async def start(message):
     try:
@@ -66,22 +57,7 @@ async def start(message):
         user_doc = user_ref.get()
 
         if not user_doc.exists:
-            user_image = None
-            try:
-                photos = await bot.get_user_profile_photos(user_id, limit=1)
-                if photos.total_count > 0:
-                    file_id = photos.photos[0][-1].file_id
-                    file_info = await bot.get_file(file_id)
-                    file_path = file_info.file_path
-                    file_url = f"https://api.telegram.org/file/bot{API_TOKEN}/{file_path}"
-
-                    response = requests.get(file_url)
-                    if response.status_code == 200:
-                        blob = bucket.blob(f"users/{user_id}.jpg")
-                        blob.upload_from_string(response.content, content_type="image/jpeg")
-                        user_image = blob.generate_signed_url(datetime.timedelta(days=365), method="GET")
-            except Exception as photo_error:
-                logger.warning(f"Could not fetch user profile photo: {photo_error}")
+            user_image = None  # No Firebase Storage usage here
 
             user_data = {
                 'userImage': user_image,
@@ -130,28 +106,27 @@ async def start(message):
                 else:
                     user_data['referredBy'] = None
 
-            user_ref.set(user_data)
+                user_ref.set(user_data)
 
-        keyboard = generate_start_keyboard()
-        await bot.reply_to(message, welcome_message, reply_markup=keyboard)
+            keyboard = generate_start_keyboard()
+            await bot.reply_to(message, welcome_message, reply_markup=keyboard)
         
     except Exception as e:
         logger.error(f"Error in start handler: {e}")
         error_message = "An error occurred. Please try again later."
         await bot.reply_to(message, error_message)
 
-# Webhook endpoint for handling updates from Telegram
-@app.route('/api/webhook', methods=['POST'])
-def webhook():
+# Replace HTTP server with more robust webhook handling
+async def process_webhook_update(update_dict):
     try:
-        json_update = request.get_json()
-        update = Update.de_json(json_update)
-        bot.process_new_update([update])
-        return jsonify({"status": "success"}), 200
+        update = Update.de_json(update_dict)
+        await bot.process_new_update([update])
     except Exception as e:
-        logger.error(f"Webhook processing error: {e}")
-        return jsonify({"status": "error"}), 500
+        logger.error(f"Webhook update processing error: {e}")
 
-# Start the Flask app
+def main():
+    logger.info("Telegram Bot is starting...")
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    main()
+
