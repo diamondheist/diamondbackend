@@ -1,9 +1,9 @@
 import os
 import json
-import asyncio
 import logging
 import requests
 import datetime
+from flask import Flask, request, jsonify
 from telebot.async_telebot import AsyncTeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, Update
 import firebase_admin
@@ -13,7 +13,10 @@ from firebase_admin import credentials, firestore, storage
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Fetch Telegram Bot Token and Firebase Configuration
+# Initialize Flask app
+app = Flask(__name__)
+
+# Fetch Telegram Bot Token and Firebase Configuration from environment variables
 try:
     API_TOKEN = os.environ.get("BOT_TOKEN")
     FIREBASE_CONFIG = os.environ.get("FIREBASE_SERVICE_ACCOUNT")
@@ -35,11 +38,13 @@ except Exception as e:
     logger.error(f"Initialization error: {e}")
     raise
 
+# Function to generate the start keyboard with a link
 def generate_start_keyboard():
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton("Open Diamondapp", web_app=WebAppInfo(url="https://diamondheist.netlify.app/")))
     return keyboard
 
+# Handler for the /start command
 @bot.message_handler(commands=['start'])
 async def start(message):
     try:
@@ -125,26 +130,28 @@ async def start(message):
                 else:
                     user_data['referredBy'] = None
 
-                user_ref.set(user_data)
+            user_ref.set(user_data)
 
-            keyboard = generate_start_keyboard()
-            await bot.reply_to(message, welcome_message, reply_markup=keyboard)
+        keyboard = generate_start_keyboard()
+        await bot.reply_to(message, welcome_message, reply_markup=keyboard)
         
     except Exception as e:
         logger.error(f"Error in start handler: {e}")
         error_message = "An error occurred. Please try again later."
         await bot.reply_to(message, error_message)
 
-# Replace HTTP server with more robust webhook handling
-async def process_webhook_update(update_dict):
+# Webhook endpoint for handling updates from Telegram
+@app.route('/api/webhook', methods=['POST'])
+def webhook():
     try:
-        update = Update.de_json(update_dict)
-        await bot.process_new_update([update])
+        json_update = request.get_json()
+        update = Update.de_json(json_update)
+        bot.process_new_update([update])
+        return jsonify({"status": "success"}), 200
     except Exception as e:
-        logger.error(f"Webhook update processing error: {e}")
+        logger.error(f"Webhook processing error: {e}")
+        return jsonify({"status": "error"}), 500
 
-def main():
-    logger.info("Telegram Bot is starting...")
-
+# Start the Flask app
 if __name__ == "__main__":
-    main()
+    app.run(debug=True)
