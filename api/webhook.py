@@ -44,7 +44,7 @@ def initialize_services():
             if not firebase_admin._apps:
                 cred = credentials.Certificate(firebase_config_dict)
                 firebase_admin.initialize_app(cred, {
-                    'storageBucket': 'diamondapp-f0ff9.appspot.com'
+                    'storageBucket': 'diamondapp-f0ff9.firebasestorage.app'
                 })
             
             db = firestore.client()
